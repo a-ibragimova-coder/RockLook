@@ -30,13 +30,15 @@ if not os.path.exists(MUSIC_FILE):
 player = vlc.MediaPlayer(MUSIC_FILE)
 player.audio_set_volume(100)
 
-# Eye landmark indices
+# Eye landmark indices for VERTICAL gaze (up/down)
+# For refined_landmarks=True
 LEFT_IRIS = 468
 RIGHT_IRIS = 473
-LEFT_EYE_OUTER = 33
-LEFT_EYE_INNER = 133
-RIGHT_EYE_OUTER = 362
-RIGHT_EYE_INNER = 263
+# Eye lids for vertical tracking
+LEFT_EYE_UPPER = 159   # Upper eyelid
+LEFT_EYE_LOWER = 145   # Lower eyelid  
+RIGHT_EYE_UPPER = 386  # Upper eyelid
+RIGHT_EYE_LOWER = 374  # Lower eyelid
 
 is_playing = False
 looking_at_camera = False
@@ -44,32 +46,31 @@ looking_at_camera = False
 # ============================================
 # TODO #1: Set your gaze threshold
 # Lower = looking straight, Higher = looking away
-GAZE_THRESHOLD = 0.02  # <-- ADJUST THIS VALUE
+GAZE_THRESHOLD = 0.03  # <-- ADJUST THIS VALUE
 # ============================================
 
-def calculate_gaze_x(face_landmarks, iris_idx, eye_outer_idx, eye_inner_idx):
-    """Calculate horizontal gaze position (-1 to 1)
-       -1 = looking left, 0 = center, 1 = looking right"""
+def calculate_vertical_gaze(face_landmarks, iris_idx, eye_upper_idx, eye_lower_idx):
+    """Calculate vertical gaze position (0 = center, higher = looking down/up)"""
     iris = face_landmarks.landmark[iris_idx]
-    eye_outer = face_landmarks.landmark[eye_outer_idx]
-    eye_inner = face_landmarks.landmark[eye_inner_idx]
+    eye_upper = face_landmarks.landmark[eye_upper_idx]
+    eye_lower = face_landmarks.landmark[eye_lower_idx]
     
-    iris_x = iris.x
-    eye_outer_x = eye_outer.x
-    eye_inner_x = eye_inner.x
+    iris_y = iris.y
+    eye_upper_y = eye_upper.y
+    eye_lower_y = eye_lower.y
     
-    # Calculate eye width
-    eye_width = abs(eye_inner_x - eye_outer_x)
+    # Calculate eye height
+    eye_height = abs(eye_lower_y - eye_upper_y)
     
-    # Calculate where iris is relative to eye center (-1 to 1)
-    eye_center = (eye_outer_x + eye_inner_x) / 2
-    iris_offset = (iris_x - eye_center) / eye_width
+    # Calculate where iris is relative to eye center
+    eye_center_y = (eye_upper_y + eye_lower_y) / 2
+    iris_offset = abs(iris_y - eye_center_y) / eye_height
     
-    return iris_offset  # Returns value between -0.5 and 0.5
+    return iris_offset  # Returns value between 0 and 0.5
 
-print("=== Gaze Music Controller ===")
-print("Look at camera → Music plays")
-print("Look away → Music pauses")
+print("=== VERTICAL GAZE Music Controller ===")
+print("Look directly at camera → Music plays")
+print("Look up/down → Music pauses")
 print("Press 'q' to quit\n")
 
 # Test audio
@@ -87,26 +88,26 @@ while True:
     
     if results.multi_face_landmarks:
         for face_landmarks in results.multi_face_landmarks:
-            # Calculate horizontal gaze for both eyes
-            left_gaze_x = calculate_gaze_x(face_landmarks, LEFT_IRIS, LEFT_EYE_OUTER, LEFT_EYE_INNER)
-            right_gaze_x = calculate_gaze_x(face_landmarks, RIGHT_IRIS, RIGHT_EYE_OUTER, RIGHT_EYE_INNER)
+            # Calculate vertical gaze for both eyes
+            left_gaze = calculate_vertical_gaze(face_landmarks, LEFT_IRIS, LEFT_EYE_UPPER, LEFT_EYE_LOWER)
+            right_gaze = calculate_vertical_gaze(face_landmarks, RIGHT_IRIS, RIGHT_EYE_UPPER, RIGHT_EYE_LOWER)
             
-            # Average gaze (how far from center)
-            gaze_offset = abs((left_gaze_x + right_gaze_x) / 2)
+            # Average gaze offset (how far from center vertically)
+            gaze_offset = (left_gaze + right_gaze) / 2
             
             # Show individual gaze values for debugging
-            cv2.putText(frame, f"Left Gaze X: {left_gaze_x:.3f}", (10, 60), 
+            cv2.putText(frame, f"Left Vertical Gaze: {left_gaze:.3f}", (10, 60), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-            cv2.putText(frame, f"Right Gaze X: {right_gaze_x:.3f}", (10, 85), 
+            cv2.putText(frame, f"Right Vertical Gaze: {right_gaze:.3f}", (10, 85), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
             
             # ============================================
-            # TODO #2: Music trigger logic based on gaze
+            # TODO #2: Music trigger logic based on vertical gaze
             # ============================================
             if gaze_offset < GAZE_THRESHOLD:
                 if not looking_at_camera:
                     looking_at_camera = True
-                    print(f"✓ Looking at camera! (gaze offset: {gaze_offset:.3f})")
+                    print(f"✓ Looking at camera! (vertical offset: {gaze_offset:.3f})")
                 if not is_playing:
                     player.play()
                     is_playing = True
@@ -116,7 +117,7 @@ while True:
             else:
                 if looking_at_camera:
                     looking_at_camera = False
-                    print(f"✗ Looking away (gaze offset: {gaze_offset:.3f})")
+                    print(f"✗ Looking away (vertical offset: {gaze_offset:.3f})")
                 if is_playing:
                     player.pause()
                     is_playing = False
@@ -125,7 +126,7 @@ while True:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             
             # Show gaze value on screen
-            cv2.putText(frame, f"Gaze Offset: {gaze_offset:.3f} (Threshold: {GAZE_THRESHOLD})", 
+            cv2.putText(frame, f"Vertical Gaze Offset: {gaze_offset:.3f} (Threshold: {GAZE_THRESHOLD})", 
                         (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
             
             # Draw face mesh
@@ -145,7 +146,7 @@ while True:
     cv2.putText(frame, "Press 'q' to quit", (10, frame.shape[0] - 10), 
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
     
-    cv2.imshow('Gaze Music Controller', frame)
+    cv2.imshow('Vertical Gaze Music Controller', frame)
     
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
